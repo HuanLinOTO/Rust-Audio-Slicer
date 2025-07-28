@@ -27,27 +27,40 @@
 
 ## 🚀 快速开始
 
-### 安装依赖
+### 下载二进制文件
 
-确保已安装 [Rust](https://rustup.rs/)，然后：
+从 [Releases](https://github.com/your-repo/audio-slicer/releases) 页面下载适合您操作系统的预编译二进制文件：
+
+- **Windows**: `audio-slicer-windows.exe`
+- **Linux**: `audio-slicer-linux`
+- **macOS**: `audio-slicer-macos`
+
+### 从源码编译
+
+如果您需要从源码编译，请确保已安装 [Rust](https://rustup.rs/)：
 
 ```bash
-git clone <repository-url>
-cd audio-learning
+git clone https://github.com/HuanLinOTO/Rust-Audio-Slicer/
+cd Rust-Audio-Slicer
 cargo build --release
 ```
 
 ### 基本用法
 
 ```bash
-# 处理单个文件
-cargo run -- slice -i input.wav -o slices
+# 使用下载的二进制文件处理单个文件
+./audio-slicer slice -i input.wav -o slices
 
 # 处理整个目录（递归搜索）
-cargo run -- slice -i audio_folder -o output_folder
+./audio-slicer slice -i audio_folder -o output_folder
 
 # 使用4个线程并行处理
-cargo run -- slice -i audio_folder -o output_folder --threads 4
+./audio-slicer slice -i audio_folder -o output_folder --threads 4
+
+# 激进切片模式（极敏感的静音检测）
+./audio-slicer slice -i input.wav -o output \
+  --threshold-db -100 \
+  --max-silence-ms 5
 ```
 
 ## 🔧 命令行参数
@@ -72,7 +85,7 @@ cargo run -- slice -i audio_folder -o output_folder --threads 4
 ### 查看帮助
 
 ```bash
-cargo run -- slice --help
+./audio-slicer slice --help
 ```
 
 ## 📋 使用示例
@@ -81,23 +94,23 @@ cargo run -- slice --help
 
 ```bash
 # 使用默认参数处理单个文件
-cargo run -- slice -i my_audio.wav -o output
+./audio-slicer slice -i my_audio.wav -o output
 
 # 处理目录并保留结构
-cargo run -- slice -i audio_dataset -o processed_audio
+./audio-slicer slice -i audio_dataset -o processed_audio
 ```
 
 ### 2. 自定义切片参数
 
 ```bash
 # 更激进的切片（更多短片段）
-cargo run -- slice -i input.wav -o output \
+./audio-slicer slice -i input.wav -o output \
   --threshold-db -60 \
   --min-length-ms 500 \
   --max-silence-ms 300
 
 # 更保守的切片（更少长片段）
-cargo run -- slice -i input.wav -o output \
+./audio-slicer slice -i input.wav -o output \
   --threshold-db -45 \
   --min-length-ms 3000 \
   --max-silence-ms 2000
@@ -107,10 +120,10 @@ cargo run -- slice -i input.wav -o output \
 
 ```bash
 # 小批量文件使用4线程
-cargo run -- slice -i small_dataset -o output --threads 4
+./audio-slicer slice -i small_dataset -o output --threads 4
 
 # 大批量文件使用更多线程
-cargo run -- slice -i large_dataset -o output --threads 16
+./audio-slicer slice -i large_dataset -o output --threads 16
 ```
 
 ## 📁 输出结构

@@ -56,6 +56,10 @@ enum Commands {
         #[arg(long, default_value = "800")]
         max_silence_ms: u32,
 
+        /// 启用切片合并
+        #[arg(long, default_value = "false")]
+        enable_merge: bool,
+
         /// 最大合并时长 (ms)
         #[arg(long, default_value = "8000")]
         max_merge_duration_ms: u32,
@@ -197,6 +201,7 @@ struct ProcessingConfig {
     config: SlicerConfig,
     silence_threshold: f32,
     min_audio_ratio: f32,
+    enable_merge: bool,
     max_merge_duration_ms: u32,
 }
 
@@ -255,14 +260,16 @@ fn process_single_file_threaded(
         result.stats.total_slice_time += slice_duration;
         result.stats.total_chunks_detected += chunks.len();
 
-        // 4. 合并短片段
+        // 4. 合并短片段（可选）
         let merge_start = Instant::now();
-        chunks = merge_short_chunks(
-            &chunks,
-            processing_config.max_merge_duration_ms,
-            sample_rate,
-            slicer.hop_size(),
-        );
+        if processing_config.enable_merge {
+            chunks = merge_short_chunks(
+                &chunks,
+                processing_config.max_merge_duration_ms,
+                sample_rate,
+                slicer.hop_size(),
+            );
+        }
         let merge_duration = merge_start.elapsed().as_secs_f64();
         result.stats.total_merge_time += merge_duration;
         result.stats.total_chunks_merged += chunks.len();
@@ -341,6 +348,7 @@ fn process_slice_command(
     min_interval_ms: u32,
     hop_size_ms: u32,
     max_silence_ms: u32,
+    enable_merge: bool,
     max_merge_duration_ms: u32,
     silence_threshold: f32,
     min_audio_ratio: f32,
@@ -374,6 +382,13 @@ fn process_slice_command(
     println!("   - 最小间隔: {min_interval_ms}ms");
     println!("   - 跳跃大小: {hop_size_ms}ms");
     println!("   - 最大静音长度: {max_silence_ms}ms");
+    println!(
+        "   - 切片合并: {}",
+        if enable_merge { "启用" } else { "禁用" }
+    );
+    if enable_merge {
+        println!("   - 最大合并时长: {max_merge_duration_ms}ms");
+    }
     println!("   - 静音检测阈值: {silence_threshold}");
     println!("   - 最小有效音频占比: {:.1}%", min_audio_ratio * 100.0);
 
@@ -395,9 +410,9 @@ fn process_slice_command(
             .unwrap()
             .progress_chars("#>-")
     );
-    overall_progress.set_message("准备开始并行处理...");
 
     println!("\n🔄 开始并行处理...\n");
+    overall_progress.set_message("准备开始并行处理...");
 
     // 处理每个文件 (并行)
     let input_base = if input.is_file() {
@@ -418,6 +433,7 @@ fn process_slice_command(
                     config: config.clone(),
                     silence_threshold,
                     min_audio_ratio,
+                    enable_merge,
                     max_merge_duration_ms,
                 },
                 &overall_progress,
@@ -558,6 +574,7 @@ async fn main() -> Result<()> {
             min_interval_ms,
             hop_size_ms,
             max_silence_ms,
+            enable_merge,
             max_merge_duration_ms,
             silence_threshold,
             min_audio_ratio,
@@ -571,6 +588,7 @@ async fn main() -> Result<()> {
                 min_interval_ms,
                 hop_size_ms,
                 max_silence_ms,
+                enable_merge,
                 max_merge_duration_ms,
                 silence_threshold,
                 min_audio_ratio,
