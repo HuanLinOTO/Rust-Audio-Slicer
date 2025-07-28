@@ -122,28 +122,32 @@ jobs:
           path: ./artifacts
 
       - name: List artifacts
-
         run: find ./artifacts -type f -exec ls -la {} \;
 
-      - name: Create checksums
+      - name: Prepare release files
         run: |
-          cd artifacts
-          for dir in */; do
-            cd "$dir"
-            for file in *; do
-              if [ -f "$file" ]; then
-                sha256sum "$file" > "$file.sha256"
-              fi
-            done
-            cd ..
+          mkdir -p ./release-files
+          # 移动所有二进制文件到统一目录
+          find ./artifacts -name "audio-slicer-*" -type f | while read file; do
+            cp "$file" "./release-files/$(basename "$file")"
           done
+          
+          # 创建SHA256校验文件
+          cd ./release-files
+          for file in audio-slicer-*; do
+            if [ -f "$file" ] && [[ ! "$file" =~ \.sha256$ ]]; then
+              sha256sum "$file" > "$file.sha256"
+            fi
+          done
+          
+          # 列出所有将要上传的文件
+          echo "Files to be uploaded:"
+          ls -la
 
       - name: Create release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            artifacts/**/audio-slicer-*
-            artifacts/**/*.sha256
+          files: ./release-files/*
           body: |
             # Audio Slicer Release ${{ github.ref_name }}
 
