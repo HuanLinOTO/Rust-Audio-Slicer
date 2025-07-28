@@ -1,0 +1,212 @@
+name: Build and Release
+
+on:
+  push:
+    branches: ["master"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: audio-slicer-windows-x64.exe
+            use_cross: false
+
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            name: audio-slicer-windows-arm64.exe
+            use_cross: false
+
+          # macOS
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: audio-slicer-macos-x64
+            use_cross: false
+
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: audio-slicer-macos-arm64
+            use_cross: false
+
+          # Linux
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: audio-slicer-linux-x64
+            use_cross: false
+
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: audio-slicer-linux-arm64
+            use_cross: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.use_cross == true
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Install system dependencies (Linux native builds)
+        if: matrix.os == 'ubuntu-latest' && matrix.use_cross == false
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config
+
+      - name: Build binary (native)
+        if: matrix.use_cross == false
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Build binary (cross)
+        if: matrix.use_cross == true
+        run: |
+          cross build --release --target ${{ matrix.target }}
+
+      - name: Prepare binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          copy "target\${{ matrix.target }}\release\audio-learning.exe" "${{ matrix.name }}"
+
+      - name: Prepare binary (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cp target/${{ matrix.target }}/release/audio-learning ${{ matrix.name }}
+          chmod +x ${{ matrix.name }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.name }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: List artifacts
+
+        run: find ./artifacts -type f -exec ls -la {} \;
+
+      - name: Create checksums
+        run: |
+          cd artifacts
+          for dir in */; do
+            cd "$dir"
+            for file in *; do
+              if [ -f "$file" ]; then
+                sha256sum "$file" > "$file.sha256"
+              fi
+            done
+            cd ..
+          done
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/**/audio-slicer-*
+            artifacts/**/*.sha256
+          body: |
+            # Audio Slicer Release ${{ github.ref_name }}
+
+            ## 📦 下载说明
+
+            选择适合你系统的版本：
+
+            **Windows:**
+            - `audio-slicer-windows-x64.exe` - Windows 64位 (Intel/AMD)
+            - `audio-slicer-windows-arm64.exe` - Windows ARM64 (Surface Pro X等)
+
+            **macOS:**
+            - `audio-slicer-macos-x64` - macOS Intel 64位
+            - `audio-slicer-macos-arm64` - macOS Apple Silicon (M1/M2/M3)
+
+            **Linux:**
+            - `audio-slicer-linux-x64` - Linux 64位 (Intel/AMD)
+            - `audio-slicer-linux-arm64` - Linux ARM64 (树莓派4等)
+
+            ## 🚀 使用方法
+
+            ```bash
+            # 基本用法
+            ./audio-slicer slice -i input.wav -o output
+
+            # 批量处理目录
+            ./audio-slicer slice -i audio_folder -o output_folder
+
+            # 多线程处理
+            ./audio-slicer slice -i audio_folder -o output_folder --threads 4
+            ```
+
+            ## 📋 完整文档
+
+            请查看项目的 [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) 获取详细使用说明。
+
+            ## 🔐 安全验证
+
+            每个可执行文件都提供了SHA256校验和文件（.sha256），用于验证下载文件的完整性。
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config
+
+      - name: Run tests
+        run: cargo test --verbose
+
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
+
+      - name: Check formatting
+        run: cargo fmt -- --check
