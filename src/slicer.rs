@@ -241,7 +241,12 @@ mod tests {
         }
         // 每块时长必须严格小于 1000ms
         for &c in &out {
-            assert!(duration_ms(c, 80, 16000) < 1000.0, "块 {:?} 时长 {:.2}ms 超限", c, duration_ms(c, 80, 16000));
+            assert!(
+                duration_ms(c, 80, 16000) < 1000.0,
+                "块 {:?} 时长 {:.2}ms 超限",
+                c,
+                duration_ms(c, 80, 16000)
+            );
         }
     }
 
