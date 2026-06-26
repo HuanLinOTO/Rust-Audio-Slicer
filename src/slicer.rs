@@ -86,14 +86,14 @@ impl Slicer {
                 continue;
             }
 
-            if let Some(sil_start) = silence_start.take() {
-                if i - sil_start > self.max_silence {
-                    let clip_end = sil_start + self.min_interval;
-                    if clip_end - clip_start >= self.min_length {
-                        chunks.push((clip_start, clip_end));
-                    }
-                    clip_start = clip_end;
+            if let Some(sil_start) = silence_start.take()
+                && i - sil_start > self.max_silence
+            {
+                let clip_end = sil_start + self.min_interval;
+                if clip_end - clip_start >= self.min_length {
+                    chunks.push((clip_start, clip_end));
                 }
+                clip_start = clip_end;
             }
         }
 
