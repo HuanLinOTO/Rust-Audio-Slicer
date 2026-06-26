@@ -11,7 +11,7 @@ use std::time::Instant;
 use walkdir::WalkDir;
 
 use audio::load_audio;
-use slicer::{Slicer, SlicerConfig, is_silence, merge_short_chunks};
+use slicer::{Slicer, SlicerConfig, enforce_max_duration, is_silence, merge_short_chunks};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -63,6 +63,10 @@ enum Commands {
         /// 最大合并时长 (ms)
         #[arg(long, default_value = "8000")]
         max_merge_duration_ms: u32,
+
+        /// 最大切片时长 (ms)，超过则硬切成多块；0 表示禁用
+        #[arg(long, default_value = "0")]
+        max_duration_ms: u32,
 
         /// 静音检测阈值
         #[arg(long, default_value = "0.001")]
@@ -203,6 +207,7 @@ struct ProcessingConfig {
     min_audio_ratio: f32,
     enable_merge: bool,
     max_merge_duration_ms: u32,
+    max_duration_ms: u32,
 }
 
 /// 处理单个音频文件 (线程安全版本)
@@ -260,12 +265,20 @@ fn process_single_file_threaded(
         result.stats.total_slice_time += slice_duration;
         result.stats.total_chunks_detected += chunks.len();
 
-        // 4. 合并短片段（可选）
+        // 4. 合并短片段（可选）+ 硬切超长切片
         let merge_start = Instant::now();
         if processing_config.enable_merge {
             chunks = merge_short_chunks(
                 &chunks,
                 processing_config.max_merge_duration_ms,
+                sample_rate,
+                slicer.hop_size(),
+            );
+        }
+        if processing_config.max_duration_ms > 0 {
+            chunks = enforce_max_duration(
+                &chunks,
+                processing_config.max_duration_ms,
                 sample_rate,
                 slicer.hop_size(),
             );
@@ -350,6 +363,7 @@ fn process_slice_command(
     max_silence_ms: u32,
     enable_merge: bool,
     max_merge_duration_ms: u32,
+    max_duration_ms: u32,
     silence_threshold: f32,
     min_audio_ratio: f32,
 ) -> Result<()> {
@@ -388,6 +402,9 @@ fn process_slice_command(
     );
     if enable_merge {
         println!("   - 最大合并时长: {max_merge_duration_ms}ms");
+    }
+    if max_duration_ms > 0 {
+        println!("   - 最大切片时长: {max_duration_ms}ms (硬切)");
     }
     println!("   - 静音检测阈值: {silence_threshold}");
     println!("   - 最小有效音频占比: {:.1}%", min_audio_ratio * 100.0);
@@ -435,6 +452,7 @@ fn process_slice_command(
                     min_audio_ratio,
                     enable_merge,
                     max_merge_duration_ms,
+                    max_duration_ms,
                 },
                 &overall_progress,
             )
@@ -576,6 +594,7 @@ async fn main() -> Result<()> {
             max_silence_ms,
             enable_merge,
             max_merge_duration_ms,
+            max_duration_ms,
             silence_threshold,
             min_audio_ratio,
         } => {
@@ -590,6 +609,7 @@ async fn main() -> Result<()> {
                 max_silence_ms,
                 enable_merge,
                 max_merge_duration_ms,
+                max_duration_ms,
                 silence_threshold,
                 min_audio_ratio,
             )?;

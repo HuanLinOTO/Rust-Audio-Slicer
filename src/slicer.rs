@@ -138,6 +138,45 @@ pub fn merge_short_chunks(
     merged
 }
 
+/// 当切片时长超过 `max_duration_ms` 时硬切成多块，保证每块时长严格小于 `max_duration_ms`
+///
+/// `max_duration_ms` 为 0 时表示禁用（直接返回原切片）。
+/// 输入/输出的切片均以 `hop_size` 为单位的帧区间 `(start_frame, end_frame)` 表示。
+pub fn enforce_max_duration(
+    chunks: &[(usize, usize)],
+    max_duration_ms: u32,
+    sample_rate: u32,
+    hop_size: usize,
+) -> Vec<(usize, usize)> {
+    if max_duration_ms == 0 || chunks.is_empty() || hop_size == 0 {
+        return chunks.to_vec();
+    }
+
+    // 计算满足 duration < max_duration_ms 的最大样本数。
+    // 要求 samples * 1000 < max_duration_ms * sample_rate，取整后:
+    //   max_samples = (max_duration_ms * sample_rate - 1) / 1000
+    let product = (max_duration_ms as u64)
+        .saturating_mul(sample_rate as u64)
+        .saturating_sub(1);
+    let max_samples = (product / 1000) as usize;
+
+    // 每块的最大帧数: (end - start) * hop_size <= max_samples
+    let max_frames = (max_samples / hop_size).max(1);
+
+    let mut result = Vec::with_capacity(chunks.len());
+    for &(start, end) in chunks {
+        let mut cur = start;
+        while end - cur > max_frames {
+            result.push((cur, cur + max_frames));
+            cur += max_frames;
+        }
+        if cur < end {
+            result.push((cur, end));
+        }
+    }
+    result
+}
+
 /// 检测音频切片是否主要是静音
 pub fn is_silence(samples: &[f32], threshold: f32, min_audio_ratio: f32) -> bool {
     if samples.is_empty() {
@@ -157,4 +196,72 @@ pub fn is_silence(samples: &[f32], threshold: f32, min_audio_ratio: f32) -> bool
     let audio_ratio = non_silent_samples as f32 / samples.len() as f32;
 
     audio_ratio < min_audio_ratio
+}
+
+#[cfg(test)]
+mod tests {
+    use super::enforce_max_duration;
+
+    fn duration_ms(chunk: (usize, usize), hop_size: usize, sample_rate: u32) -> f64 {
+        (chunk.1 - chunk.0) as f64 * hop_size as f64 / sample_rate as f64 * 1000.0
+    }
+
+    #[test]
+    fn disabled_returns_input_unchanged() {
+        let chunks = vec![(0, 100), (100, 200)];
+        let out = enforce_max_duration(&chunks, 0, 16000, 80);
+        assert_eq!(out, chunks);
+    }
+
+    #[test]
+    fn empty_input_returns_empty() {
+        let out = enforce_max_duration(&[], 1000, 16000, 80);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn short_chunk_not_split() {
+        // sample_rate=16000, hop=80 (5ms). 100 frames = 500ms.
+        let chunks = vec![(0, 100)];
+        let out = enforce_max_duration(&chunks, 1000, 16000, 80);
+        assert_eq!(out, vec![(0, 100)]);
+    }
+
+    #[test]
+    fn long_chunk_is_split_and_all_below_limit() {
+        // sample_rate=16000, hop=80 (5ms). 1000 frames = 5000ms. max=1000ms.
+        let chunks = vec![(0, 1000)];
+        let out = enforce_max_duration(&chunks, 1000, 16000, 80);
+        assert!(out.len() > 1);
+        // 重新拼接应覆盖原始区间
+        assert_eq!(out.first().unwrap().0, 0);
+        assert_eq!(out.last().unwrap().1, 1000);
+        for w in out.windows(2) {
+            assert_eq!(w[0].1, w[1].0, "切片应连续无重叠");
+        }
+        // 每块时长必须严格小于 1000ms
+        for &c in &out {
+            assert!(duration_ms(c, 80, 16000) < 1000.0, "块 {:?} 时长 {:.2}ms 超限", c, duration_ms(c, 80, 16000));
+        }
+    }
+
+    #[test]
+    fn multiple_chunks_each_split() {
+        let chunks = vec![(0, 500), (500, 1500)];
+        let out = enforce_max_duration(&chunks, 1000, 16000, 80);
+        for &c in &out {
+            assert!(duration_ms(c, 80, 16000) < 1000.0);
+        }
+    }
+
+    #[test]
+    fn exact_boundary_is_split() {
+        // 200 frames * 80 samples / 16000 * 1000 = 1000ms (恰好等于 max)，应被切分
+        let chunks = vec![(0, 200)];
+        let out = enforce_max_duration(&chunks, 1000, 16000, 80);
+        assert!(out.len() > 1, "等于上限的切片也应被切分");
+        for &c in &out {
+            assert!(duration_ms(c, 80, 16000) < 1000.0);
+        }
+    }
 }

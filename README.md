@@ -79,6 +79,7 @@ cargo build --release
 - `--hop-size-ms <MS>`: 跳跃大小，单位毫秒（默认: 5）
 - `--max-silence-ms <MS>`: 最大静音长度，单位毫秒（默认: 800）
 - `--max-merge-duration-ms <MS>`: 最大合并时长，单位毫秒（默认: 8000）
+- `--max-duration-ms <MS>`: 最大切片时长，单位毫秒。超过该时长的切片会被硬切成多块，每块严格小于该值；0 表示禁用（默认: 0）
 - `--silence-threshold <FLOAT>`: 静音检测阈值（默认: 0.001）
 - `--min-audio-ratio <FLOAT>`: 最小有效音频占比（默认: 0.1）
 
@@ -192,6 +193,7 @@ processed_audio/
 
 - **min-length-ms**: 控制最短片段长度，避免过短的切片
 - **max-merge-duration-ms**: 控制合并后的最大长度
+- **max-duration-ms**: 控制单个切片的最大时长，超长切片会被硬切
 - **hop-size-ms**: 分析精度，越小越精确但处理时间更长
 
 ## 🛠️ 开发说明
